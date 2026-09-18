@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AegisICU — ICU Early Warning System</title>
+  <meta name="description" content="AegisICU: XGBoost-powered ICU Early Warning System with real-time patient monitoring, risk trajectories, and SHAP-based clinical explainability. MIMIC-III validated." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%233b82f6'/%3E%3Cpath d='M8 16h5l2-6 3 12 2-6h4' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div id="ambient-shell">
+<div id="app">
+
+  <!-- ── Left Navigation Rail ─────────────────────────────────────────── -->
+  <nav id="nav-rail" role="navigation" aria-label="Main navigation">
+
+    <div class="nav-brand-mini" title="AegisICU v2.0">A+</div>
+
+    <button class="nav-btn active" data-nav="bedside" id="nav-bedside" aria-label="Bedside Monitor">
+      🩺 <span class="tooltip">Bedside Monitor</span>
+    </button>
+    <button class="nav-btn" data-nav="cohort" id="nav-cohort" aria-label="Cohort Triage">
+      📋 <span class="tooltip">Cohort Triage</span>
+    </button>
+    <button class="nav-btn" data-nav="model" id="nav-model" aria-label="Model Benchmarks">
+      📊 <span class="tooltip">Model Benchmarks</span>
+    </button>
+    <button class="nav-btn" data-nav="vitals" id="nav-vitals" aria-label="Multi-Vitals">
+      📈 <span class="tooltip">Multi-Vitals</span>
+    </button>
+    <button class="nav-btn" data-nav="safety" id="nav-safety" aria-label="Limitations & Safety">
+      ⚠️ <span class="tooltip">Limitations &amp; Safety</span>
+    </button>
+
+    <div class="nav-spacer"></div>
+
+    <button class="nav-btn" id="nav-role" aria-label="Toggle Role">
+      ⚙️ <span class="tooltip">Settings / Role</span>
+    </button>
+    <button class="nav-btn" id="nav-tour" aria-label="Quick Tour">
+      ⚡ <span class="tooltip">Quick Tour</span>
+    </button>
+
+  </nav>
+
+  <!-- ── Header ────────────────────────────────────────────────────────── -->
+  <header id="app-header" role="banner">
+
+    <div class="brand-tag">
+      <div class="brand-dot"></div>
+      AegisICU
+    </div>
+
+    <div class="header-divider"></div>
+
+    <div class="kpi-cards" role="region" aria-label="Key Performance Indicators">
+
+      <div class="kpi-card">
+        <span class="kpi-icon">⏱</span>
+        <div class="kpi-info">
+          <div class="kpi-label">Horizon</div>
+          <div class="kpi-value amber">6.00 hrs</div>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <span class="kpi-icon">🎯</span>
+        <div class="kpi-info">
+          <div class="kpi-label">AUROC</div>
+          <div class="kpi-value blue">0.8904</div>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <span class="kpi-icon"><span class="live-dot"></span></span>
+        <div class="kpi-info">
+          <div class="kpi-label">ICU Clock</div>
+          <div class="kpi-value" id="live-clock" style="font-family:'JetBrains Mono',monospace">05:24:18</div>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <span class="kpi-icon">🏥</span>
+        <div class="kpi-info">
+          <div class="kpi-label">Beds</div>
+          <div class="kpi-value green" id="monitored-beds">18 • 4 🚨 • 5 ⚠️</div>
+        </div>
+      </div>
+
+    </div>
+    
+    <div id="role-badge-display" class="role-badge" title="Click to toggle role view">
+      👨‍⚕️ Clinician View
+    </div>
+
+    <!-- Live vitals ticker — injected by patients.js -->
+
+  </header>
+
+  <!-- ── Main Content ───────────────────────────────────────────────────── -->
+  <main id="main-content" role="main">
+
+    <!-- ── Center Zone ──────────────────────────────────────────────── -->
+    <section id="center-zone" aria-label="Patient Biometric View">
+
+      <!-- Patient Info Card -->
+      <div id="patient-overlay" role="region" aria-label="Patient information">
+
+        <div class="patient-id-row">
+          <span class="patient-id" id="patient-id-display">PT-10013</span>
+          <h1 class="patient-name" id="patient-name-display">Eleanor Vance</h1>
+        </div>
+
+        <p class="patient-meta" id="patient-meta-display">
+          68y Female · MICU Bed 04 · Acute Cardiopulmonary Decompensation at t=24h
+        </p>
+
+        <div class="patient-actions">
+          <button class="action-btn amber" id="btn-jump-event">⚡ Jump to Event</button>
+          <button class="action-btn violet" id="btn-jump-alert">🎯 First Alert</button>
+          <button class="action-btn emerald" id="btn-play-sim">▶ Play Simulation</button>
+        </div>
+
+        <!-- Real-Time Vital Cards -->
+        <div id="rt-vitals-row" aria-label="Real-time vital signs">
+
+          <div class="rt-vital-chip">
+            <span class="rt-vital-icon">❤️</span>
+            <div>
+              <div class="rt-vital-val" id="rtc-hr-val">—</div>
+              <div class="rt-vital-unit">bpm</div>
+            </div>
+          </div>
+
+          <div class="rt-vital-chip">
+            <span class="rt-vital-icon">🫁</span>
+            <div>
+              <div class="rt-vital-val" id="rtc-spo2-val">—</div>
+              <div class="rt-vital-unit">SpO₂%</div>
+            </div>
+          </div>
+
+          <div class="rt-vital-chip">
+            <span class="rt-vital-icon">💨</span>
+            <div>
+              <div class="rt-vital-val" id="rtc-rr-val">—</div>
+              <div class="rt-vital-unit">/min RR</div>
+            </div>
+          </div>
+
+          <div class="rt-vital-chip">
+            <span class="rt-vital-icon">🩸</span>
+            <div>
+              <div class="rt-vital-val" id="rtc-sbp-val">—</div>
+              <div class="rt-vital-unit">SBP mmHg</div>
+            </div>
+          </div>
+
+          <div class="rt-vital-chip">
+            <span class="rt-vital-icon">🔬</span>
+            <div>
+              <div class="rt-vital-val" id="rtc-lac-val">—</div>
+              <div class="rt-vital-unit">Lactate</div>
+            </div>
+          </div>
+
+          <div class="rt-vital-chip">
+            <span class="rt-vital-icon">🧠</span>
+            <div>
+              <div class="rt-vital-val" id="rtc-gcs-val">—</div>
+              <div class="rt-vital-unit">GCS</div>
+            </div>
+          </div>
+
+        </div>
+
+      </div><!-- /patient-overlay -->
+
+      <!-- Biometric Canvas -->
+      <div id="biometric-zone">
+        <canvas id="biometric-canvas" aria-label="Holographic patient biometric core" role="img"></canvas>
+        <div class="biometric-overlay-info" id="bio-overlay-vitals" aria-live="polite">
+          <div class="bio-stat">
+            <div class="bio-stat-dot" style="background:#ef4444"></div>
+            <span class="bio-stat-text" id="vital-chip-hr">HR — bpm</span>
+          </div>
+          <div class="bio-stat">
+            <div class="bio-stat-dot" style="background:#06b6d4"></div>
+            <span class="bio-stat-text" id="vital-chip-rr">RR — /min</span>
+          </div>
+          <div class="bio-stat">
+            <div class="bio-stat-dot" style="background:#10b981"></div>
+            <span class="bio-stat-text" id="vital-chip-spo2">SpO₂ — %</span>
+          </div>
+          <div class="bio-stat">
+            <div class="bio-stat-dot" style="background:#f59e0b"></div>
+            <span class="bio-stat-text" id="vital-chip-sbp">SBP — mmHg</span>
+          </div>
+          <div class="bio-stat">
+            <div class="bio-stat-dot" style="background:#8b5cf6"></div>
+            <span class="bio-stat-text" id="vital-chip-lac">Lac — mmol/L</span>
+          </div>
+        </div>
+        <div class="biometric-hud-badge">
+          <span class="live-dot" style="width:6px;height:6px"></span>
+          <span>3D TELEMETRY CORE</span>
+        </div>
+      </div>
+
+      <!-- Gauge Row -->
+      <div id="gauge-row" role="region" aria-label="Clinical metrics gauges">
+
+        <div class="gauge-cell">
+          <div class="gauge-label">XGBoost Risk</div>
+          <div class="gauge-svg-wrap">
+            <svg class="gauge-svg" viewBox="0 0 100 100" aria-hidden="true">
+              <circle class="gauge-track" cx="50" cy="50" r="38"/>
+              <circle class="gauge-fill" id="gauge-risk-fill" cx="50" cy="50" r="38"
+                      stroke-dasharray="238.76" stroke-dashoffset="238.76"/>
+            </svg>
+            <div class="gauge-center-text">
+              <div class="gauge-val" id="gauge-risk-val">—</div>
+              <div class="gauge-unit">probability</div>
+            </div>
+          </div>
+          <div class="gauge-sub" id="gauge-risk-sub">XGBoost Risk</div>
+        </div>
+
+        <div class="gauge-cell">
+          <div class="gauge-label">Early Warning</div>
+          <div class="gauge-svg-wrap">
+            <svg class="gauge-svg" viewBox="0 0 100 100" aria-hidden="true">
+              <circle class="gauge-track" cx="50" cy="50" r="38"/>
+              <circle class="gauge-fill" id="gauge-lead-fill" cx="50" cy="50" r="38"
+                      stroke-dasharray="238.76" stroke-dashoffset="238.76"/>
+            </svg>
+            <div class="gauge-center-text">
+              <div class="gauge-val" id="gauge-lead-val">—</div>
+              <div class="gauge-unit">hours lead</div>
+            </div>
+          </div>
+          <div class="gauge-sub" id="gauge-lead-sub">Lead Time</div>
+        </div>
+
+        <div class="gauge-cell">
+          <div class="gauge-label">RR Velocity</div>
+          <div class="gauge-svg-wrap">
+            <svg class="gauge-svg" viewBox="0 0 100 100" aria-hidden="true">
+              <circle class="gauge-track" cx="50" cy="50" r="38"/>
+              <circle class="gauge-fill" id="gauge-rr-fill" cx="50" cy="50" r="38"
+                      stroke-dasharray="238.76" stroke-dashoffset="238.76"/>
+            </svg>
+            <div class="gauge-center-text">
+              <div class="gauge-val" id="gauge-rr-val">—</div>
+              <div class="gauge-unit">/h</div>
+            </div>
+          </div>
+          <div class="gauge-sub" id="gauge-rr-sub">RR Velocity</div>
+        </div>
+
+      </div><!-- /gauge-row -->
+
+    </section><!-- /center-zone -->
+
+    <!-- ── Right Panel ───────────────────────────────────────────────── -->
+    <aside id="right-panel" aria-label="Charts and bed management">
+
+      <!-- Risk Chart -->
+      <div class="chart-panel">
+        <div class="chart-panel-header">
+          <span class="chart-panel-title">Risk Trajectory</span>
+          <span class="chart-panel-badge" id="risk-peak-badge">Peak: —</span>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas id="risk-trajectory-chart" aria-label="Risk score trajectory over time"></canvas>
+        </div>
+      </div>
+
+      <!-- SHAP Chart -->
+      <div class="chart-panel">
+        <div class="chart-panel-header">
+          <span class="chart-panel-title">SHAP Feature Drivers</span>
+          <span style="font-size:10px;color:#a0aec0">t = <span id="shap-t-label">—</span>h</span>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas id="shap-chart" aria-label="SHAP feature attributions"></canvas>
+        </div>
+      </div>
+
+      <!-- Status Pill + Quick Actions -->
+      <div id="status-badge-block">
+        <div class="status-pill critical" id="status-pill" role="status" aria-live="polite">
+          🚨 —% CRITICAL — t=—h
+        </div>
+        <div class="quick-actions">
+          <button class="quick-action-btn" onclick="window.openPatientNotesModal()">📝 Notes</button>
+          <button class="quick-action-btn" onclick="window.openAddPatientModal()" style="color:#1d4ed8">➕ Admit</button>
+          <button class="quick-action-btn" onclick="window.openAlertsModal()" style="color:#92400e">🔔 Alerts</button>
+        </div>
+      </div>
+
+      <!-- Bed Rail -->
+      <div id="bed-rail" role="navigation" aria-label="Patient bed selector">
+        <div class="bed-rail-label">ICU Beds</div>
+        <div id="bed-rail-inner"></div>
+      </div>
+
+    </aside>
+
+  </main>
+
+  <!-- ── Footer Scrubber ────────────────────────────────────────────────── -->
+  <footer id="app-footer" role="contentinfo">
+
+    <button class="play-btn" id="play-btn" aria-label="Play / Pause simulation">▶</button>
+
+    <span class="scrubber-label" id="scrub-time-display">t = 4h</span>
+
+    <div class="scrubber-wrap">
+      <input type="range" id="time-scrubber"
+             min="1" max="36" value="4" step="1"
+             aria-label="Time scrubber"
+             style="--pct: 8.6%" />
+    </div>
+
+    <span class="scrubber-label" style="color:#a0aec0">t=36h</span>
+
+    <div class="footer-info">
+      MIMIC-III · Threshold 0.35 · v2.0.26
+      <span id="footer-patient-count" style="color:#3b82f6;margin-left:8px;font-weight:700"></span>
+    </div>
+
+  </footer>
+
+</div><!-- /app -->
+</div><!-- /ambient-shell -->
+
+<!-- ── Main Modal (Cohort / Model / Vitals / Safety) ────────────────────── -->
+<div id="modal-overlay" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="modal-title">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <div class="brand-tag" style="font-size:13px">
+        <div class="brand-dot" style="width:6px;height:6px"></div>
+        AegisICU
+      </div>
+      <span class="modal-title" id="modal-title">View</span>
+      <button class="modal-close" id="modal-close-btn" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<!-- ── Scripts ────────────────────────────────────────────────────────────── -->
+<script src="clinical_data.js"></script>
+<script src="app.js"></script>
+<script src="patients.js"></script>
+
+<script>
+  // Scrubber SHAP label sync
+  document.getElementById('time-scrubber')?.addEventListener('input', function() {
+    const el = document.getElementById('shap-t-label');
+    if (el) el.textContent = this.value;
+  });
+
+  // Role toggle
+  function toggleRole() {
+    const roles = [
+      { name: 'Clinician', badge: '👨‍⚕️ Clinician View' },
+      { name: 'Hospital Lead', badge: '👩‍💼 Lead / Admin View' }
+    ];
+    const navBtn = document.getElementById('nav-role');
+    const badgeEl = document.getElementById('role-badge-display');
+    const current = parseInt(navBtn?.getAttribute('data-role') || '0');
+    const next = (current + 1) % roles.length;
+    navBtn?.setAttribute('data-role', next);
+    if (badgeEl) badgeEl.textContent = roles[next].badge;
+
+    const t = document.createElement('div');
+    t.textContent = `Active Profile: ${roles[next].name}`;
+    t.style.cssText = `position:fixed;bottom:70px;right:20px;padding:10px 16px;background:white;border:1px solid #bfdbfe;border-radius:8px;color:#1e40af;font-size:12px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.12);animation:toastIn 0.3s ease`;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 2500);
+  }
+
+  document.getElementById('nav-role')?.addEventListener('click', toggleRole);
+  document.getElementById('role-badge-display')?.addEventListener('click', toggleRole);
+
+  // Tour
+  document.getElementById('nav-tour')?.addEventListener('click', function() {
+    const steps = [
+      '👋 Welcome to AegisICU! Real-time XGBoost Early Warning Dashboard.',
+      '🌐 The central sphere shows holographic 3D biometric risk telemetry.',
+      '📡 Live vital cards update dynamically with simulated patient telemetry.',
+      '⏱ Drag the scrubber to explore any hour across the 36-hour clinical timeline.',
+      '➕ Click Admit or the rail + button to admit new patients into the ICU.',
+      '🔔 The alert bell displays real-time critical decompensation warnings.',
+      '📝 Use Notes to log clinical observations and orders per patient.',
+      '🏥 Click any bed badge in the ICU Beds rail to instantly triage patients.'
+    ];
+    let step = 0;
+    const toast = document.createElement('div');
+    toast.style.cssText = `position:fixed;bottom:70px;left:80px;max-width:340px;padding:16px;background:white;border:1px solid #e2e8f0;border-radius:12px;color:#1a202c;font-size:13px;line-height:1.6;z-index:9999;box-shadow:0 8px 32px rgba(0,0,0,0.12);animation:toastIn 0.3s ease`;
+    const update = () => {
+      toast.innerHTML = `
+        <div style="font-size:11px;font-weight:700;color:#3b82f6;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">
+          Quick Tour · ${step+1} of ${steps.length}
+        </div>
+        <div style="margin-bottom:12px">${steps[step]}</div>
+        <div style="display:flex;gap:8px">
+          <button onclick="this.closest('div[style]').remove()"
+            style="flex:1;padding:6px 12px;border:1px solid #e2e8f0;border-radius:6px;background:white;color:#718096;font-size:12px;cursor:pointer">
+            Skip
+          </button>
+          <button id="tour-next"
+            style="flex:1;padding:6px 12px;border:1px solid #bfdbfe;border-radius:6px;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:600;cursor:pointer">
+            ${step < steps.length - 1 ? 'Next →' : 'Done ✓'}
+          </button>
+        </div>`;
+      document.getElementById('tour-next').onclick = () => {
+        step++;
+        if (step >= steps.length) toast.remove();
+        else update();
+      };
+    };
+    update();
+    document.body.appendChild(toast);
+  });
+
+  // Real-time vital row update
+  window.updateRTVitalRow = function() {
+    const pList = window.AEGIS_PATIENTS;
+    if (!pList || !pList.length) return;
+    const activeIdx = (window.STATE && typeof window.STATE.activePatientIdx === 'number') ? window.STATE.activePatientIdx : 0;
+    const rt = (window.AEGIS_RT_STATE && window.AEGIS_RT_STATE[activeIdx]) || {
+      hr: pList[activeIdx].vitals[0].hr,
+      spo2: pList[activeIdx].vitals[0].spo2,
+      rr: pList[activeIdx].vitals[0].rr,
+      sbp: pList[activeIdx].vitals[0].sbp,
+      lactate: pList[activeIdx].vitals[0].lactate,
+      gcs: pList[activeIdx].vitals[0].gcs
+    };
+
+    function setChip(id, val, isCrit, isWarn) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = val;
+      el.style.color = isCrit ? '#ef4444' : isWarn ? '#f59e0b' : '#10b981';
+      const chip = el.closest('.rt-vital-chip');
+      if (chip) {
+        chip.style.borderColor = isCrit ? '#fca5a5' : isWarn ? '#fde68a' : '#e2e8f0';
+        chip.style.background  = isCrit ? '#fef2f2' : isWarn ? '#fffbeb' : '#f8fafc';
+      }
+    }
+
+    setChip('rtc-hr-val',   Math.round(rt.hr),        rt.hr > 130,         rt.hr > 110);
+    setChip('rtc-spo2-val', rt.spo2.toFixed(1) + '%', rt.spo2 < 88,        rt.spo2 < 94);
+    setChip('rtc-rr-val',   rt.rr.toFixed(1),         rt.rr > 28,          rt.rr > 22);
+    setChip('rtc-sbp-val',  Math.round(rt.sbp),       rt.sbp < 90,         rt.sbp < 100);
+    setChip('rtc-lac-val',  rt.lactate.toFixed(2),    rt.lactate > 4,      rt.lactate > 2);
+    setChip('rtc-gcs-val',  rt.gcs,                   rt.gcs < 9,          rt.gcs < 13);
+
+    // Footer count
+    const fp = document.getElementById('footer-patient-count');
+    if (fp) fp.textContent = `● ${pList.length} patients`;
+  };
+
+  // Immediate init + recurring interval
+  setTimeout(window.updateRTVitalRow, 300);
+  setInterval(window.updateRTVitalRow, 2000);
+</script>
+
+</body>
+</html>
