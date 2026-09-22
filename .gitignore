@@ -1,2 +1,29 @@
+# Local Python environments and caches
+.venv/
+venv/
 __pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local IDE and generated browser diagnostics
+.qodo/
+.playwright-mcp/
+.vscode/
+
+# The deployable static dashboard is already tracked at repository root.
+app/web/
+
+# Restricted MIMIC-III source data
+data/*.csv
+data/*.csv.gz
+
+# Derived outputs from restricted clinical data
+artifacts/test_predictions.csv
+artifacts/*.pkl
+artifacts/xgb_final.json
+
+# Local run output
+*.log
 out.txt

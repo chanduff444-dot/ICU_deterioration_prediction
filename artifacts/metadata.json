@@ -1,0 +1,13 @@
+{
+  "horizon_hours": 6.0,
+  "window_hours": 6.0,
+  "operating_threshold": 0.05,
+  "final_test_auroc": 0.8148,
+  "final_test_prauc": 0.0089,
+  "final_test_recall": 0.0,
+  "final_test_precision": 0.0,
+  "random_seed": 42,
+  "num_features": 87,
+  "test_patients_count": 15,
+  "test_windows_count": 1544
+}
